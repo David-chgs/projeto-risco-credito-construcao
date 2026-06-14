@@ -252,3 +252,11 @@ As validacoes atuais verificam:
 - Duplicidades por data e serie
 - Presenca de todas as series configuradas
 - Datas dentro do periodo esperado
+
+## INCC
+
+O pipeline inclui a serie SGS `192`, identificada no projeto como `incc_mensal`.
+
+Essa serie representa o INCC geral e sera utilizada nas proximas etapas para aproximar os indicadores macroeconomicos do tema de custo da construcao civil e risco de credito imobiliario.
+
+Observacao tecnica: a serie `21854` foi avaliada inicialmente, mas retornou erro na API do SGS para a consulta utilizada. Por isso, a serie `192` foi adotada para esta etapa do projeto.

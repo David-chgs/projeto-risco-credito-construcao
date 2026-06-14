@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 
@@ -30,6 +30,14 @@ BACEN_SERIES_CONFIGS: tuple[BacenSeriesConfig, ...] = (
         code=433,
         name="ipca_mensal",
         description="IPCA variacao mensal",
+        start_date="01/01/2023",
+        end_date="31/12/2024",
+        frequency="monthly",
+    ),
+    BacenSeriesConfig(
+        code=192,
+        name="incc_mensal",
+        description="INCC geral variacao mensal",
         start_date="01/01/2023",
         end_date="31/12/2024",
         frequency="monthly",
