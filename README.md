@@ -235,3 +235,20 @@ Indicadores atuais:
 - Proxy simples de juro real mensal
 
 Essa camada sera usada futuramente para apoiar analises de risco de credito imobiliario e visualizacoes no dashboard.
+
+## Qualidade de Dados
+
+O projeto possui uma etapa de validacao de qualidade dos dados para garantir consistencia antes das analises.
+
+Para executar:
+
+    python -m src.quality.validate_bacen_series
+
+As validacoes atuais verificam:
+
+- Existencia das tabelas obrigatorias no DuckDB
+- Presenca de registros nas tabelas processadas
+- Valores nulos em colunas criticas
+- Duplicidades por data e serie
+- Presenca de todas as series configuradas
+- Datas dentro do periodo esperado
