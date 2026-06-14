@@ -215,3 +215,23 @@ Atualmente os testes validam:
 - Formato das datas de inicio e fim
 - Frequencias suportadas
 - Selecao do arquivo Parquet bruto mais recente
+
+## Camada Analitica
+
+O projeto tambem gera uma tabela analitica mensal com indicadores macroeconomicos derivados.
+
+Tabela DuckDB:
+
+    analytics_macro_indicators
+
+Arquivo Parquet:
+
+    data/processed/analytics_macro_indicators.parquet
+
+Indicadores atuais:
+
+- Selic mensal acumulada
+- IPCA mensal
+- Proxy simples de juro real mensal
+
+Essa camada sera usada futuramente para apoiar analises de risco de credito imobiliario e visualizacoes no dashboard.
