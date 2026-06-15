@@ -1,0 +1,62 @@
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  # Serves two purposes:
+  #   1. Metabase internal metadata  (database: metabase_internal)
+  #   2. Credit risk analytical data (database: credit_risk) ← our pipeline output
+  postgres:
+    image: postgres:16-alpine
+    container_name: credit_risk_postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB}        # creates 'credit_risk' on first boot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro  # creates metabase_internal
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - credit_risk_net
+
+  # ── Metabase ───────────────────────────────────────────────────────────────
+  # Uses metabase_internal as its app database (dashboards, users, settings).
+  # After first boot, connect Metabase to credit_risk as a data source:
+  #   Admin → Databases → Add → PostgreSQL
+  #   Host: postgres | Port: 5432 | DB: credit_risk | User/Pass from .env
+  metabase:
+    image: metabase/metabase:latest
+    container_name: credit_risk_metabase
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      MB_DB_TYPE:   postgres
+      MB_DB_DBNAME: ${METABASE_DB}
+      MB_DB_PORT:   5432
+      MB_DB_USER:   ${POSTGRES_USER}
+      MB_DB_PASS:   ${POSTGRES_PASSWORD}
+      MB_DB_HOST:   postgres          # internal Docker DNS — not localhost
+    ports:
+      - "3000:3000"
+    networks:
+      - credit_risk_net
+    volumes:
+      - metabase_data:/metabase-data
+
+volumes:
+  postgres_data:
+  metabase_data:
+
+networks:
+  credit_risk_net:
+    driver: bridge

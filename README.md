@@ -1,262 +1,309 @@
-﻿# Pipeline de Analise de Risco de Credito e Custo da Construcao Civil
+# Pipeline de Risco de Credito Imobiliario
 
-Projeto de dados desenvolvido para simular uma solucao analitica para uma fintech imobiliaria, com foco em risco de credito, indicadores macroeconomicos e custos da construcao civil no Brasil.
+Projeto de portfólio de Engenharia e Análise de Dados simulando a stack analítica de uma
+fintech de crédito estruturado ou PropTech brasileira.
 
-O objetivo e construir um pipeline local, reproduzivel e modular, utilizando fontes publicas brasileiras como Banco Central do Brasil, IBGE/SINAPI e indicadores de inflacao/custo da construcao.
+O pipeline coleta indicadores macroeconômicos públicos (BACEN/SGS), gera uma base sintética
+de propostas de empreendimentos imobiliários com coerência financeira garantida, processa
+tudo em DuckDB, e expõe os dados via PostgreSQL para um dashboard executivo no Metabase.
 
-## Objetivo do Projeto
+---
 
-Este projeto demonstra a construcao de um pipeline de dados para apoiar analises de uma PropTech ou fintech imobiliaria.
+## Contexto de Negócio
 
-A solucao busca responder perguntas como:
+Uma fintech de crédito imobiliário precisa avaliar a viabilidade de empreendimentos antes de
+liberar crédito para construtoras. O motor de crédito precisa responder perguntas como:
 
-- Como indicadores macroeconomicos impactam o risco de credito imobiliario?
-- Como Selic e IPCA evoluem ao longo do tempo?
-- Como integrar dados economicos publicos em uma base analitica local?
-- Como estruturar um pipeline auditavel com Python, DuckDB e Parquet?
+- O VGV cobre todos os custos? A margem é suficiente para absorver imprevistos de obra?
+- O LTV pretendido está dentro do limite prudencial (80% do custo de construção)?
+- Como o cenário de Selic e IPCA afeta a rentabilidade do empreendimento ao longo da obra?
+- Existe concentração regional de risco na carteira?
 
-## Stack Tecnologica
+Este projeto constrói a base de dados que alimenta essas respostas.
 
-- Python
-- Pandas
-- DuckDB
-- Parquet
-- Requests
-- Streamlit
-- Docker, em etapa futura
+---
 
-## Fontes de Dados
+## Arquitetura
 
-### Banco Central do Brasil - SGS
+```
+Fontes Públicas              Dados Sintéticos
+API BACEN SGS                Mock Generator
+      |                            |
+      v                            v
+ data/raw/                    data/raw/
+ bacen_sgs_*.parquet       empreendimentos.parquet
+      |                            |
+      +------------+---------------+
+                   |
+                   v
+         data/warehouse/credit_risk.duckdb
+         ┌──────────────────────────────────────┐
+         │ RAW                                  │
+         │   raw_bacen_series                   │
+         │                                      │
+         │ PROCESSED                            │
+         │   processed_bacen_series             │
+         │   processed_empreendimentos          │
+         │                                      │
+         │ ANALYTICS                            │
+         │   analytics_macro_indicators         │
+         │   analytics_carteira_cenario         │
+         │   analytics_carteira_regiao          │
+         │   analytics_carteira_padrao          │
+         │   analytics_pipeline_mensal          │
+         └──────────────────────────────────────┘
+                   |
+                   v
+         PostgreSQL (Docker)
+         database: credit_risk
+                   |
+                   v
+         Metabase  →  http://localhost:3000
+```
 
-Fonte: Sistema Gerenciador de Series Temporais do Banco Central do Brasil.
+---
 
-Series utilizadas inicialmente:
+## Stack Tecnológica
 
-| Codigo SGS | Nome | Frequencia | Descricao |
-|---:|---|---|---|
-| 11 | selic_diaria | diaria | Taxa Selic diaria |
-| 433 | ipca_mensal | mensal | IPCA variacao mensal |
+| Camada | Tecnologia | Função |
+|---|---|---|
+| Linguagem | Python 3.13 | Orquestração e processamento |
+| Warehouse | DuckDB 1.1 | Banco analítico local (SQL sobre Parquet) |
+| Serialização | Parquet + PyArrow | Formato colunar comprimido entre etapas |
+| Extração | Requests | Coleta da API SGS/BACEN |
+| Manipulação | Pandas 2.2 | DataFrames e exportação |
+| Exportação | SQLAlchemy + psycopg2 | DuckDB → PostgreSQL |
+| Banco relacional | PostgreSQL 16 | Camada de serving para o Metabase |
+| Dashboard | Metabase | BI executivo (via Docker) |
+| Infraestrutura | Docker Compose | Orquestração de containers |
+| Testes | Pytest | Validações automatizadas |
+| Config | python-dotenv | Variáveis de ambiente |
 
-Outras fontes serao adicionadas em etapas futuras, incluindo INCC e SINAPI/IBGE.
-
-## Arquitetura de Dados
-
-O projeto segue uma arquitetura em camadas:
-
-    Fonte publica
-        ->
-    data/raw
-        ->
-    data/processed
-        ->
-    data/warehouse
-        ->
-    dashboard analitico
-
-### Camada Raw
-
-A camada `data/raw` armazena os dados brutos recebidos das fontes externas.
-
-Formatos utilizados:
-
-- JSON, para preservar a resposta original da API
-- Parquet, para leitura eficiente em etapas posteriores
-
-### Camada Processed
-
-A camada `data/processed` armazena dados tratados, tipados e padronizados.
-
-Arquivo atual:
-
-    data/processed/bacen_series.parquet
-
-Colunas principais:
-
-| Coluna | Descricao |
-|---|---|
-| reference_date | Data de referencia do indicador |
-| series_code | Codigo da serie no SGS/BACEN |
-| series_name | Nome padronizado da serie |
-| value | Valor numerico do indicador |
-| source | Fonte do dado |
-| frequency | Frequencia da serie |
-
-### Camada Warehouse
-
-A camada `data/warehouse` armazena o banco analitico local em DuckDB.
-
-Arquivo gerado:
-
-    data/warehouse/credit_risk.duckdb
-
-Tabela principal atual:
-
-    processed_bacen_series
+---
 
 ## Estrutura do Projeto
 
-    projeto-risco-credito-construcao/
-    |
-    +-- data/
-    |   +-- raw/
-    |   +-- processed/
-    |   +-- external/
-    |   +-- warehouse/
-    |
-    +-- dashboards/
-    +-- logs/
-    +-- notebooks/
-    +-- src/
-    |   +-- config/
-    |   |   +-- series_config.py
-    |   +-- ingestion/
-    |   |   +-- fetch_bacen_sgs.py
-    |   +-- processing/
-    |   |   +-- process_bacen_sgs.py
-    |   +-- utils/
-    |
-    +-- tests/
-    +-- .gitignore
-    +-- README.md
-    +-- requirements.txt
+```
+projeto-risco-credito-construcao/
+│
+├── data/
+│   ├── raw/            # dados brutos (gitignored)
+│   ├── processed/      # parquets padronizados e analíticos (gitignored)
+│   └── warehouse/      # credit_risk.duckdb (gitignored)
+│
+├── docker/
+│   └── initdb/
+│       └── 01_create_databases.sql   # cria metabase_internal no primeiro boot
+│
+├── logs/               # logs de execução por camada (gitignored)
+│
+├── src/
+│   ├── config/
+│   │   └── series_config.py          # configuração das séries BACEN
+│   ├── ingestion/
+│   │   ├── fetch_bacen_sgs.py        # coleta API SGS/BACEN
+│   │   └── generate_mock_deals.py    # gerador de propostas sintéticas
+│   ├── processing/
+│   │   ├── process_bacen_sgs.py      # processa séries macroeconômicas
+│   │   └── process_empreendimentos.py # tipagem + KPIs derivados de crédito
+│   ├── analytics/
+│   │   ├── build_macro_indicators.py  # Selic acumulada, juro real
+│   │   └── build_portfolio_analytics.py # 4 visões analíticas da carteira
+│   ├── quality/
+│   │   └── validate_bacen_series.py  # 8 validações automáticas de qualidade
+│   └── export/
+│       └── export_to_postgres.py     # DuckDB → PostgreSQL para o Metabase
+│
+├── tests/
+│   ├── test_series_config.py
+│   ├── test_process_bacen_sgs.py
+│   └── test_quality_validations.py
+│
+├── docker-compose.yml
+├── .env.docker          # template de credenciais (copiar para .env)
+├── requirements.txt
+└── README.md
+```
 
-## Como Executar o Projeto
+---
 
-### 1. Criar ambiente virtual
+## Fontes de Dados
 
-    python -m venv .venv
+### API SGS — Banco Central do Brasil
 
-### 2. Ativar ambiente virtual
+| Código SGS | Nome | Frequência | Descrição |
+|---:|---|---|---|
+| 11 | selic_diaria | Diária | Taxa Selic |
+| 433 | ipca_mensal | Mensal | IPCA variação mensal |
+| 192 | incc_mensal | Mensal | INCC geral variação mensal |
 
-    .\.venv\Scripts\Activate.ps1
+### Propostas Sintéticas de Empreendimentos
 
-### 3. Instalar dependencias
+50 propostas geradas com coerência financeira garantida pela identidade:
 
-    pip install -r requirements.txt
+```
+VGV = custo_terreno + custo_construcao + outras_despesas + imposto_estimado + margem_inicial
+```
 
-### 4. Executar ingestao dos dados do BACEN
+Distribuição intencional de cenários (seed fixo para reprodutibilidade):
 
-    python -m src.ingestion.fetch_bacen_sgs
+| Cenário | % Carteira | construction_pct / VGV | Margem esperada |
+|---|---|---|---|
+| Viável | ~70% | 40–50% | 15–28% do VGV |
+| Apertado | ~20% | 55–65% | 1–14% do VGV |
+| Inviável | ~10% | 75–90% | negativa |
 
-### 5. Executar processamento dos dados
+---
 
-    python -m src.processing.process_bacen_sgs
+## Tabelas no DuckDB
 
-Esse comando gera:
+### Camada Processed
 
-    data/processed/bacen_series.parquet
-    data/warehouse/credit_risk.duckdb
+**`processed_bacen_series`** — séries macroeconômicas tipadas e unificadas
 
-## Validacao Rapida com DuckDB
+**`processed_empreendimentos`** — propostas com 5 KPIs de crédito derivados:
 
-Abra o Python:
+| KPI | Cálculo | Leitura |
+|---|---|---|
+| `custo_total` | soma de todos os custos | envelope total da operação |
+| `prazo_obra_meses` | datediff(inicio, conclusao) | risco de duration |
+| `margem_pct_vgv` | margem / VGV | principal sinal de viabilidade |
+| `indice_cobertura` | VGV / custo_total | deve ser > 1.0 para projeto viável |
+| `ltv_sobre_custo_construcao` | financiamento / custo_construcao | exposição do banco |
 
-    python
+### Camada Analytics
 
-Depois execute:
+| Tabela | Linhas | Uso no Dashboard |
+|---|---|---|
+| `analytics_macro_indicators` | 24 | evolução de Selic, IPCA e juro real |
+| `analytics_carteira_cenario` | 3 | funil de saúde da carteira |
+| `analytics_carteira_regiao` | 5 | concentração regional de risco |
+| `analytics_carteira_padrao` | 8 | matriz padrão × cenário (scorecard) |
+| `analytics_pipeline_mensal` | 13 | pipeline de originação com VGV acumulado |
 
-    import duckdb
+---
 
-    con = duckdb.connect("data/warehouse/credit_risk.duckdb")
+## Como Executar
 
-    con.sql("""
-    SELECT
-        series_code,
-        series_name,
-        frequency,
-        MIN(reference_date) AS min_date,
-        MAX(reference_date) AS max_date,
-        COUNT(*) AS total_rows,
-        AVG(value) AS avg_value
-    FROM processed_bacen_series
-    GROUP BY
-        series_code,
-        series_name,
-        frequency
-    ORDER BY series_code
-    """).show()
+### 1. Configurar o ambiente Python
 
-    con.close()
+```bash
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-## Status Atual
+### 2. Pipeline de dados (BACEN)
 
-O projeto atualmente possui:
+```bash
+python -m src.ingestion.fetch_bacen_sgs
+python -m src.processing.process_bacen_sgs
+python -m src.analytics.build_macro_indicators
+```
 
-- Estrutura inicial de pastas
-- Ambiente virtual configurado
-- Ingestao da API SGS do Banco Central
-- Salvamento de dados brutos em JSON e Parquet
-- Processamento padronizado com DuckDB
-- Tabela analitica local com Selic diaria e IPCA mensal
+### 3. Pipeline de dados (Empreendimentos)
 
-## Proximas Etapas
+```bash
+python -m src.ingestion.generate_mock_deals
+python -m src.processing.process_empreendimentos
+python -m src.analytics.build_portfolio_analytics
+```
 
-- Adicionar testes automatizados
-- Melhorar configuracoes do pipeline
-- Incluir novas fontes, como INCC e SINAPI/IBGE
-- Criar indicadores analiticos de risco
-- Desenvolver dashboard em Streamlit
-- Containerizar o projeto com Docker na etapa final
+### 4. Validação de qualidade
 
-## Testes Automatizados
+```bash
+python -m src.quality.validate_bacen_series
+python -m pytest -v
+```
 
-O projeto utiliza `pytest` para validar regras basicas de configuracao e processamento.
+### 5. Subir o ambiente Docker (Metabase + PostgreSQL)
 
-Para executar os testes:
+```bash
+# Copiar template e configurar credenciais
+cp .env.docker .env
+# editar .env: trocar 'changeme_strong_password' por uma senha real
 
-    python -m pytest -v
+# Subir os containers
+docker compose up -d
 
-Atualmente os testes validam:
+# Verificar status
+docker compose ps
+```
 
-- Existencia de configuracoes BACEN
-- Unicidade dos codigos SGS
-- Padrao de nomes em snake_case
-- Formato das datas de inicio e fim
-- Frequencias suportadas
-- Selecao do arquivo Parquet bruto mais recente
+### 6. Exportar dados do DuckDB para o PostgreSQL
 
-## Camada Analitica
+```bash
+python -m src.export.export_to_postgres
+```
 
-O projeto tambem gera uma tabela analitica mensal com indicadores macroeconomicos derivados.
+### 7. Configurar o Metabase
 
-Tabela DuckDB:
+1. Acesse `http://localhost:3000`
+2. Siga o wizard de primeiro acesso
+3. Em **Admin → Databases → Add database → PostgreSQL**:
+   - Host: `postgres`
+   - Port: `5432`
+   - Database: `credit_risk`
+   - User/Password: valores do seu `.env`
+4. As tabelas aparecem automaticamente para criar perguntas e dashboards
 
-    analytics_macro_indicators
-
-Arquivo Parquet:
-
-    data/processed/analytics_macro_indicators.parquet
-
-Indicadores atuais:
-
-- Selic mensal acumulada
-- IPCA mensal
-- Proxy simples de juro real mensal
-
-Essa camada sera usada futuramente para apoiar analises de risco de credito imobiliario e visualizacoes no dashboard.
+---
 
 ## Qualidade de Dados
 
-O projeto possui uma etapa de validacao de qualidade dos dados para garantir consistencia antes das analises.
+O pipeline possui duas camadas de validação:
 
-Para executar:
+**Validações automáticas** (`src/quality/validate_bacen_series.py`):
 
-    python -m src.quality.validate_bacen_series
+- Tabelas obrigatórias existem no DuckDB
+- Nenhuma tabela processada está vazia
+- Sem valores nulos em colunas críticas
+- Sem duplicatas por data e série
+- Todas as séries configuradas presentes
+- Datas dentro do período esperado
+- Tabela analítica não vazia
+- Sem meses duplicados na tabela analítica
 
-As validacoes atuais verificam:
+**Gate de identidade financeira** (`process_empreendimentos.py`):
 
-- Existencia das tabelas obrigatorias no DuckDB
-- Presenca de registros nas tabelas processadas
-- Valores nulos em colunas criticas
-- Duplicidades por data e serie
-- Presenca de todas as series configuradas
-- Datas dentro do periodo esperado
+O processamento falha com `ValueError` se qualquer linha violar:
 
-## INCC
+```
+ABS((custo_total + margem_inicial) - VGV) > R$ 0.10
+```
 
-O pipeline inclui a serie SGS `192`, identificada no projeto como `incc_mensal`.
+---
 
-Essa serie representa o INCC geral e sera utilizada nas proximas etapas para aproximar os indicadores macroeconomicos do tema de custo da construcao civil e risco de credito imobiliario.
+## Variáveis de Ambiente
 
-Observacao tecnica: a serie `21854` foi avaliada inicialmente, mas retornou erro na API do SGS para a consulta utilizada. Por isso, a serie `192` foi adotada para esta etapa do projeto.
+Copie `.env.docker` para `.env` e preencha:
+
+| Variável | Descrição |
+|---|---|
+| `POSTGRES_USER` | usuário do PostgreSQL |
+| `POSTGRES_PASSWORD` | senha do PostgreSQL |
+| `POSTGRES_DB` | banco de dados analítico (`credit_risk`) |
+| `POSTGRES_PORT` | porta exposta no host (padrão: `5432`) |
+| `POSTGRES_HOST` | host para conexão Python (`localhost`) |
+| `METABASE_DB` | banco interno do Metabase (`metabase_internal`) |
+
+O arquivo `.env` está no `.gitignore` — nunca commitar credenciais.
+
+---
+
+## Status Atual
+
+- Pipeline BACEN: ingestão, processamento e analytics de Selic, IPCA e INCC
+- Pipeline Empreendimentos: 50 propostas sintéticas com KPIs de crédito derivados
+- DuckDB warehouse com 9 tabelas organizadas em raw / processed / analytics
+- Infraestrutura Docker Compose com PostgreSQL 16 e Metabase
+- Script de exportação DuckDB → PostgreSQL
+- Testes automatizados com pytest
+
+## Próximas Etapas
+
+- Integração de dados reais do SINAPI/IBGE para custos regionalizados de construção
+- Cruzamento de `regiao_incc` com séries do INCC regionalizado (FGV)
+- Modelo de scoring de risco de crédito baseado nos KPIs derivados
+- Configuração dos dashboards no Metabase (carteira, pipeline, scorecard)
+- Automatização do pipeline com agendamento (Prefect ou cron)
