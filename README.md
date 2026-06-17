@@ -13,6 +13,13 @@ tudo em DuckDB, e expõe os dados via PostgreSQL para um dashboard executivo no 
 
 ![Dashboard de Risco de Crédito](docs/dashboard_credito.png)
 
+O dashboard executivo no Metabase consolida quatro visões da carteira:
+
+- **Distribuição da Carteira por Cenário** — funil de saúde (Viável / Apertado / Inviável)
+- **VGV por Região** — concentração regional de risco (chave `regiao_incc`)
+- **Pipeline Acumulado de VGV** — evolução da originação ao longo do tempo
+- **Margem Média por Cenário** — sinal de viabilidade; o cenário Inviável apresenta margem média negativa
+
 ---
 
 ## Contexto de Negócio
@@ -27,6 +34,12 @@ liberar crédito para construtoras. O motor de crédito precisa responder pergun
 
 Este projeto constrói a base de dados que alimenta essas respostas.
 
+---
+> **Janela de referência:** este projeto trabalha com um recorte histórico fixo
+> (jan/2023 a dez/2024). As séries do BACEN são coletadas nesse intervalo e a
+> base de empreendimentos é sintética com `seed` fixo, garantindo
+> reprodutibilidade. Não é um pipeline em tempo real — é um snapshot analítico
+> versionado. A coleta contínua está prevista nas próximas etapas.
 ---
 
 ## Arquitetura
@@ -137,11 +150,19 @@ projeto-risco-credito-construcao/
 
 ### API SGS — Banco Central do Brasil
 
-| Código SGS | Nome | Frequência | Descrição |
-|---:|---|---|---|
-| 11 | selic_diaria | Diária | Taxa Selic |
-| 433 | ipca_mensal | Mensal | IPCA variação mensal |
-| 192 | incc_mensal | Mensal | INCC geral variação mensal |
+Janela de coleta: **01/01/2023 a 31/12/2024** (definida em `src/config/series_config.py`).
+
+| Código SGS | Nome          | Frequência | Descrição                          |
+| ---------- | ------------- | ---------- | ---------------------------------- |
+| 11         | selic_diaria  | Diária     | Taxa Selic (capitalizada p/ mês)   |
+| 433        | ipca_mensal   | Mensal     | IPCA — variação mensal             |
+| 192        | incc_mensal   | Mensal     | INCC-DI (FGV) — variação mensal    |
+
+> **Nota sobre o INCC:** a série 192 (INCC-DI nacional) é ingerida e processada,
+> mas ainda **não** integra a tabela `analytics_macro_indicators` (que hoje cobre
+> Selic, IPCA e juro real). Ela está disponível no warehouse para o cruzamento
+> com o INCC regionalizado e a chave `regiao_incc` da carteira, planejado nas
+> próximas etapas.
 
 ### Propostas Sintéticas de Empreendimentos
 
@@ -179,14 +200,18 @@ Distribuição intencional de cenários (seed fixo para reprodutibilidade):
 
 ### Camada Analytics
 
-| Tabela | Linhas | Uso no Dashboard |
-|---|---|---|
-| `analytics_macro_indicators` | 24 | evolução de Selic, IPCA e juro real |
-| `analytics_carteira_cenario` | 3 | funil de saúde da carteira |
-| `analytics_carteira_regiao` | 5 | concentração regional de risco |
-| `analytics_carteira_padrao` | 8 | matriz padrão × cenário (scorecard) |
-| `analytics_pipeline_mensal` | 13 | pipeline de originação com VGV acumulado |
+> As contagens de linhas abaixo refletem a configuração de referência
+> (janela 2023–2024, 50 propostas, `seed=42`). Como as agregações dependem
+> dos dados gerados, os totais podem variar se o `seed`, o volume de propostas
+> ou a janela de datas forem alterados.
 
+| Tabela                       | Linhas (config. ref.) | Uso no Dashboard                         |
+| ---------------------------- | --------------------- | ---------------------------------------- |
+| `analytics_macro_indicators` | ~24 (meses 2023–2024) | evolução de Selic, IPCA e juro real      |
+| `analytics_carteira_cenario` | ≤ 3 (por cenário)     | funil de saúde da carteira               |
+| `analytics_carteira_regiao`  | ≤ 5 (por região)      | concentração regional de risco           |
+| `analytics_carteira_padrao`  | ≤ 9 (padrão × cenário)| matriz padrão × cenário (scorecard)      |
+| `analytics_pipeline_mensal`  | ~12–14 (por mês)      | pipeline de originação com VGV acumulado |
 ---
 
 ## Como Executar
@@ -272,7 +297,12 @@ O pipeline possui duas camadas de validação:
 
 **Gate de identidade financeira** (`process_empreendimentos.py`):
 
-O processamento falha com `ValueError` se qualquer linha violar:
+A `margem_inicial` é gerada como resíduo da identidade
+(`VGV − custos`), de modo que a relação abaixo é verdadeira por construção.
+O gate funciona, portanto, como **proteção contra corrupção dos dados**
+(ex.: edição manual do Parquet, falha de serialização) e não como validação
+estatística do gerador. O processamento falha com `ValueError` se qualquer
+linha violar:
 
 ```
 ABS((custo_total + margem_inicial) - VGV) > R$ 0.10
@@ -299,17 +329,24 @@ O arquivo `.env` está no `.gitignore` — nunca commitar credenciais.
 
 ## Status Atual
 
-- Pipeline BACEN: ingestão, processamento e analytics de Selic, IPCA e INCC
-- Pipeline Empreendimentos: 50 propostas sintéticas com KPIs de crédito derivados
-- DuckDB warehouse com 9 tabelas organizadas em raw / processed / analytics
+Pipeline de dados **ponta a ponta**, da coleta ao dashboard:
+
+- Pipeline BACEN: ingestão, processamento e analytics de Selic e IPCA
+  (INCC ingerido, ainda fora da camada analítica)
+- Pipeline Empreendimentos: 50 propostas sintéticas com 5 KPIs de crédito derivados
+- Warehouse DuckDB com 9 tabelas organizadas em raw / processed / analytics
 - Infraestrutura Docker Compose com PostgreSQL 16 e Metabase
-- Script de exportação DuckDB → PostgreSQL
-- Testes automatizados com pytest
+- Exportação DuckDB → PostgreSQL
+- Validações de qualidade + testes automatizados com pytest
+- **Dashboard executivo no Metabase** com 4 visões da carteira: distribuição por
+  cenário, VGV por região, pipeline acumulado de VGV e margem média por cenário
+  (ver print na seção [Dashboard](#dashboard))
 
 ## Próximas Etapas
 
-- Integração de dados reais do SINAPI/IBGE para custos regionalizados de construção
-- Cruzamento de `regiao_incc` com séries do INCC regionalizado (FGV)
+Evolução para **modelagem, dados reais e automação**:
+
 - Modelo de scoring de risco de crédito baseado nos KPIs derivados
-- Configuração dos dashboards no Metabase (carteira, pipeline, scorecard)
-- Automatização do pipeline com agendamento (Prefect ou cron)
+- Inclusão do INCC na camada analítica + cruzamento com INCC regionalizado (FGV)
+- Integração de custos reais de construção (SINAPI/IBGE) para substituir a base sintética
+- Novas visões no dashboard: matriz padrão × cenário (scorecard) e indicadores macro
