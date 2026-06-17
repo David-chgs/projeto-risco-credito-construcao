@@ -9,6 +9,12 @@ tudo em DuckDB, e expõe os dados via PostgreSQL para um dashboard executivo no 
 
 ---
 
+## Dashboard
+
+![Dashboard de Risco de Crédito](docs/dashboard_credito.png)
+
+---
+
 ## Contexto de Negócio
 
 Uma fintech de crédito imobiliário precisa avaliar a viabilidade de empreendimentos antes de
